@@ -1,0 +1,11 @@
+order_id,customer_name,product,quantity,unit_price,order_date,region
+1001,Alice Wang,Laptop,2,5999.00,2026-03-01,East
+1002,Bob Li,Mouse,10,89.50,2026-03-02,North
+1003,Carol Zhang,Keyboard,5,299.00,2026-03-03,South
+1004,David Chen,Monitor,3,2499.00,2026-03-05,West
+1005,Eva Liu,Headset,8,459.00,2026-03-07,East
+1006,Frank Zhao,Webcam,15,199.00,2026-03-10,North
+1007,Grace Wu,USB Hub,20,69.90,2026-03-12,South
+1008,Henry Sun,SSD 1TB,6,699.00,2026-03-15,West
+1009,Iris Qian,RAM 16GB,12,349.00,2026-03-18,East
+1010,Jack Huang,Cable Kit,30,39.90,2026-03-20,North
