@@ -1,8 +1,8 @@
 # Cross-Tenant Blob Storage Sync with Azure Data Factory
 
-使用 Azure Data Factory 实现跨租户 Blob Storage 数据同步的 Demo。
+A demo that syncs data from Blob Storage in **Tenant A** to Blob Storage in **Tenant B** using Azure Data Factory, with a daily schedule trigger.
 
-## 架构图
+## Architecture
 
 ```
 ┌─────────────────────────────────────────┐     ┌──────────────────────────────────┐
@@ -20,46 +20,48 @@
 └─────────────────────────────────────────┘     └──────────────────────────────────┘
 ```
 
-## 认证策略
+## Authentication Strategy
 
-| 连接 | 认证方式 | 原因 |
-|------|----------|------|
-| ADF → Blob-A (同租户) | **Managed Identity** | 最安全，无需管理凭据 |
-| ADF → Blob-B (跨租户) | **Service Principal** | MI 无法跨租户认证，SP 是唯一可行方案 |
+| Connection | Auth Method | Reason |
+|------------|-------------|--------|
+| ADF → Blob-A (same tenant) | **Managed Identity** | Most secure, no credentials to manage |
+| ADF → Blob-B (cross-tenant) | **Service Principal** | MI cannot authenticate across tenants; SP is the only viable option |
 
-## 前置条件
+The Service Principal is created in **Tenant B**. ADF in Tenant A uses the SP's **App ID + Secret + Tenant B's Tenant ID** to request a token directly from Tenant B's Azure AD via the OAuth2 Client Credentials flow.
 
-- Azure CLI (`az`) 已安装
-- 拥有两个 Azure 租户的管理员权限
-- 两个租户各有一个活跃的 Azure 订阅
-- 安装 ADF CLI 扩展: `az extension add --name datafactory`
+## Prerequisites
 
-## 文件说明
+- Azure CLI (`az`) installed
+- Admin access to two Azure tenants
+- An active Azure subscription in each tenant
+- ADF CLI extension: `az extension add --name datafactory`
 
-| 文件 | 说明 |
-|------|------|
-| `env.sh` | 环境配置（租户 ID、订阅 ID、资源名称） |
-| `01-setup-tenant-a.sh` | 创建 Tenant A 资源（Storage、ADF、上传测试数据） |
-| `02-setup-tenant-b.sh` | 创建 Tenant B 资源（Storage、SP、角色分配） |
-| `03-setup-adf-pipeline.sh` | 创建 ADF 管道（Linked Service、Dataset、Pipeline、Trigger） |
-| `04-verify.sh` | 手动触发管道并验证数据同步 |
-| `05-cleanup.sh` | 清理所有资源 |
-| `data/sample-sales.csv` | 测试数据 |
+## File Overview
 
-## 使用步骤
+| File | Description |
+|------|-------------|
+| `env.sh.example` | Environment config template (copy to `env.sh` and fill in values) |
+| `01-setup-tenant-a.sh` | Creates Tenant A resources (Storage, ADF, uploads test data) |
+| `02-setup-tenant-b.sh` | Creates Tenant B resources (Storage, Service Principal, role assignment) |
+| `03-setup-adf-pipeline.sh` | Creates ADF pipeline (Linked Services, Datasets, Pipeline, Trigger) |
+| `04-verify.sh` | Manually triggers the pipeline and verifies data sync |
+| `05-cleanup.sh` | Cleans up all resources in both tenants |
+| `data/sample-sales.csv` | Sample test data |
 
-### Step 1: 配置环境变量
+## Usage
 
-编辑 `env.sh`，填写：
-- `TENANT_A_ID` / `SUB_A_ID` — Tenant A 的租户 ID 和订阅 ID
-- `TENANT_B_ID` / `SUB_B_ID` — Tenant B 的租户 ID 和订阅 ID
-- `STORAGE_A` / `STORAGE_B` — 全局唯一的存储账户名（3-24字符，仅小写字母和数字）
+### Step 1: Configure Environment Variables
 
 ```bash
-vim env.sh
+cp env.sh.example env.sh
 ```
 
-### Step 2: 创建 Tenant A 资源
+Edit `env.sh` and fill in:
+- `TENANT_A_ID` / `SUB_A_ID` — Tenant A directory (tenant) ID and subscription ID
+- `TENANT_B_ID` / `SUB_B_ID` — Tenant B directory (tenant) ID and subscription ID
+- `STORAGE_A` / `STORAGE_B` — Globally unique storage account names (3-24 chars, lowercase + numbers only)
+
+### Step 2: Set Up Tenant A Resources
 
 ```bash
 az login --tenant <TENANT_A_ID>
@@ -67,76 +69,81 @@ chmod +x *.sh
 ./01-setup-tenant-a.sh
 ```
 
-### Step 3: 创建 Tenant B 资源 + Service Principal
+This creates a Resource Group, Storage Account, uploads test data, and creates an Azure Data Factory with Managed Identity.
+
+### Step 3: Set Up Tenant B Resources + Service Principal
 
 ```bash
 az login --tenant <TENANT_B_ID>
 ./02-setup-tenant-b.sh
 ```
 
-> SP 的 AppId 和 Secret 会自动写入 `env.sh`。
+This creates a Resource Group, Storage Account, and a Service Principal with `Storage Blob Data Contributor` role on Storage B. SP credentials are automatically saved to `env.sh`.
 
-### Step 4: 创建 ADF 管道 + 每日触发器
+### Step 4: Create ADF Pipeline + Daily Trigger
 
 ```bash
 az login --tenant <TENANT_A_ID>
 ./03-setup-adf-pipeline.sh
 ```
 
-### Step 5: 验证
+This creates Linked Services (MI for source, SP for destination), Datasets, a Copy Pipeline, and a daily schedule trigger.
+
+### Step 5: Verify
 
 ```bash
 ./04-verify.sh
 ```
 
-验证完成后，可以切换到 Tenant B 查看到达的数据：
+To verify from the Tenant B side:
 ```bash
 az login --tenant <TENANT_B_ID>
 az storage blob list --account-name <STORAGE_B> --container-name dest-data --auth-mode login --output table
 ```
 
-### Step 6: 清理
+### Step 6: Cleanup
 
 ```bash
 ./05-cleanup.sh
 ```
 
-## 管道调度
+## Schedule
 
-- 触发器: `trigger-daily-sync`
-- 频率: 每天一次
-- 时间: 北京时间 02:00 (UTC+8)
-- 可在 ADF 门户中修改调度时间
+- Trigger: `trigger-daily-sync`
+- Frequency: Once per day
+- Time: 02:00 CST (UTC+8)
+- Can be modified in the ADF portal
 
-## 安全注意事项
+## Security Notes
 
-- SP Secret 存储在本地 `env.sh` 中，Demo 结束后应及时清理
-- Storage Account 已禁用公共 Blob 访问
-- 最低 TLS 版本设为 1.2
+- SP Secret is stored locally in `env.sh` — clean up promptly after the demo
+- `env.sh` is excluded from git via `.gitignore`
+- Storage Accounts have public blob access disabled
+- Minimum TLS version is set to 1.2
 
-## 生产环境建议
+## Production Recommendations
 
-### 凭据管理
-- 将 SP Secret 存入 **Azure Key Vault**，ADF 通过 Key Vault Linked Service 引用，避免明文存储
-- 为 SP 设置较短的 Secret 有效期（如 90 天），配合自动轮换策略
-- 使用 **Federated Identity Credentials**（Workload Identity Federation）替代 SP Secret，实现无密钥跨租户认证
+### Credential Management
+- Store SP Secret in **Azure Key Vault** and reference it via ADF Key Vault Linked Service
+- Set a short SP Secret expiry (e.g., 90 days) with an automatic rotation policy
+- Use **Federated Identity Credentials** (Workload Identity Federation) to eliminate SP secrets entirely for cross-tenant auth
 
-### 网络安全
-- 为 Storage Account 启用 **Private Endpoint**，禁用公网访问
-- 配置 ADF **Managed Virtual Network** + **Private Endpoint**，确保数据传输不经公网
-- 为 Storage Account 配置 **防火墙规则**，仅允许 ADF 的托管 VNet 访问
+### Network Security
+- Enable **Private Endpoints** on Storage Accounts and disable public network access
+- Configure ADF **Managed Virtual Network** + **Private Endpoints** to keep data transfer off the public internet
+- Set up Storage Account **firewall rules** to allow access only from ADF's managed VNet
 
-### 监控与告警
-- 启用 **ADF 诊断日志**，发送到 Log Analytics Workspace
-- 为 Pipeline 失败设置 **Azure Monitor 告警**（邮件/Teams 通知）
-- 监控 SP Secret 到期时间，提前告警
+### Monitoring & Alerting
+- Enable **ADF diagnostic logs** and send them to a Log Analytics Workspace
+- Set up **Azure Monitor alerts** for pipeline failures (email/Teams notifications)
+- Monitor SP Secret expiration dates with proactive alerts
 
-### 数据同步策略
-- 使用 **增量复制**（基于文件修改时间或 watermark）替代全量复制，降低成本和延迟
-- 启用 ADF **数据流校验**（checksum/row count）确保源端和目标端数据一致
-- 对关键数据启用 Storage Account 的 **Soft Delete** 和 **版本控制**，防止误删
+### Data Sync Strategy
+- Use **incremental copy** (based on file modification time or watermark) instead of full copy to reduce cost and latency
+- Enable ADF **data validation** (checksum/row count) to ensure source-destination consistency
+- Enable **Soft Delete** and **versioning** on Storage Accounts for critical data
 
-### 高可用
-- ADF 本身是托管服务，自带 HA；建议在 Pipeline 层面配置 **重试策略**（retry count + interval）
-- 为 Storage Account 选择 **GRS/GZRS** 冗余级别
-- 考虑使用 **ADF 的全局参数**和 **CI/CD（ARM 模板导出）** 管理多环境部署
+### High Availability
+- ADF is a managed service with built-in HA; configure **retry policies** (retry count + interval) at the pipeline activity level
+- Choose **GRS/GZRS** redundancy for Storage Accounts
+- Use **ADF global parameters** and **CI/CD (ARM template export)** for multi-environment deployment management
